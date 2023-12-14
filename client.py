@@ -2,6 +2,7 @@ import socket
 import base64
 import os
 
+
 class HttpClient:
     def __init__(self, host, port):
         self.host = host
@@ -13,7 +14,7 @@ class HttpClient:
             self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.connection.connect((self.host, self.port))
 
-    def send_request(self, request,cookies=None):
+    def send_request(self, request, cookies=None):
         if cookies:
             request += f"\r\nCookie: {cookies}"
         request += "\r\n"
@@ -81,30 +82,52 @@ def get_credentials():
     password = input("Enter password: ")
     return username, password
 
+
 def initial_request(client):
     """发送初始请求，不带认证信息"""
     request = client.build_request("GET", "/")
     response = client.send_request(request)
     status_code, headers, body = client.parse_response(response.decode())
     if status_code == "401":
-        print(status_code,"Unauthorized, please authenticate")
+        print(status_code, "Unauthorized, please authenticate")
         return headers.get("WWW-Authenticate")
-    return None
+    else:
+        print(status_code, body)
+        return None
 
-# def choose_server():
-#     print("Input the number of server you need:")
-#     print("1. query the data")
+
+def choose_server(choice, client):
+    if choice == 1:
+        www_authenticate = initial_request(client)
+        if www_authenticate:
+            username, password = get_credentials()
+            authenticated = authenticate_user(client, username, password)
+            while not authenticated:
+                print("Authentication failed, please try again")
+                username, password = get_credentials()
+                authenticated = authenticate_user(client, username, password)
+    elif choice == 2:
+        print("hello")
+    elif choice == 3:
+        print("hello")
+    elif choice == 4:
+        print("Bye")
+        exit(0)
+
 
 # 服务器地址和端口
 HOST, PORT = 'localhost', 8000
 client = HttpClient(HOST, PORT)
 try:
     client.connect()
-    www_authenticate = initial_request(client)  # 发送初始请求，获取WWW-Authenticate
-    if www_authenticate:
-        username, password = get_credentials()  # 获取用户名和密码
-        if authenticate_user(client, username, password):
-            # send_file(client, username, password, '/path/to/your/file.txt')
-            print("成功授权，可以进行其他操作了")
+    while True:
+        print("Input the number of server you need:")
+        print("1. send empty request")
+        print("2. send request with credentials")
+        print("3. upload file")
+        print("4. exit")
+        choice = int(input())
+        choose_server(choice, client)
+
 finally:
     client.close()
