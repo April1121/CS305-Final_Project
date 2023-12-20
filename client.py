@@ -96,7 +96,7 @@ def initial_request(client):
         return None
 
 
-def choose_server(choice, client):
+def choose_serve(choice, client):
     if choice == 1:
         www_authenticate = initial_request(client)
         if www_authenticate:
@@ -127,7 +127,7 @@ try:
         print("3. upload file")
         print("4. exit")
         choice = int(input())
-        choose_server(choice, client)
+        choose_serve(choice, client)
 
 finally:
     client.close()
