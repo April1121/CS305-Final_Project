@@ -28,6 +28,40 @@ def parse_request(request):
     return method, path, headers, body
 
 
+def parse_multipart_form_data(body, boundary):
+    """解析multipart/form-data格式的数据。
+
+    Args:
+        body (str): 请求体的内容。
+        boundary (str): 分隔符。
+
+    Returns:
+        tuple: 包含文件名和文件数据的元组。
+    """
+    # 分割请求体为不同部分
+    parts = body.split('--' + boundary)
+
+    # 初始化文件名和文件数据
+    file_name = None
+    file_data = None
+
+    # 遍历每个部分
+    for part in parts:
+        # 检查是否有Content-Disposition头部
+        if 'Content-Disposition: form-data;' in part:
+            # 提取文件名
+            file_name = part.split('filename="')[1].split('"')[0]
+
+            # 提取文件数据
+            # 文件数据通常位于两个CRLF之后
+            file_data = part.split('\r\n\r\n')[1].rstrip('\r\n--')
+
+            # 一旦找到文件，就跳出循环
+            break
+
+    return file_name, file_data.encode()  # 编码文件数据为字节
+
+
 def parse_range_header(range_header):
     """解析Range头部，返回范围列表"""
     try:
@@ -45,7 +79,7 @@ def parse_range_header(range_header):
         return None
 
 
-def send_directory_listing(client_socket, session_id, dir_path):
+def send_directory_html(client_socket, session_id, dir_path):
     """发送一个列出目录内容的HTML页面。"""
     try:
         entries = os.listdir(dir_path)
@@ -159,7 +193,7 @@ def send_multiple_ranges(client_socket, session_id, file_path, ranges, file_size
     """发送多范围请求的响应"""
     headers = {
         'Content-Type': 'multipart/byteranges; boundary=THIS_STRING_SEPARATES',
-        'Transfer-Encoding': 'chunked',
+        # 'Transfer-Encoding': 'chunked',
         'Content-Range': f'bytes */{file_size}',
         'MIME-Version': '1.0'
     }
@@ -298,12 +332,52 @@ class HttpServer:
 
     def handle_request(self, client_socket, session_id, method, path, headers, body):
         """处理客户端连接"""
-        if method == 'POST' and path.startswith('/upload/'):
-            filename = path.split('/')[-1]
-            with open(filename, 'wb') as file:
-                file.write(body.encode())  # 保存文件内容
-            send_response(client_socket, session_id, '200 OK', 'File uploaded successfully')
 
+        # 如果是POST请求
+        if method == 'POST':
+            if '/upload' in path:
+                upload_path = self.parse_and_validate_path(client_socket, session_id, path, 'upload')
+                if not upload_path:
+                    return
+
+                # 解析multipart/form-data
+                content_type = headers.get('Content-Type', '')
+                if 'multipart/form-data' in content_type:
+                    boundary = content_type.split('boundary=')[1]
+                    file_name, file_data = parse_multipart_form_data(body, boundary)
+
+                    full_path = os.path.join('./data', upload_path, file_name)
+                    directory = os.path.dirname(full_path)
+                    if not os.path.exists(directory):
+                        send_response(client_socket, session_id, '404 Not Found', 'Directory not found')
+                        return
+
+                    try:
+                        with open(full_path, 'wb') as file:
+                            file.write(file_data)
+                        send_response(client_socket, session_id, '200 OK', 'File uploaded successfully')
+                    except IOError:
+                        send_response(client_socket, session_id, '500 Internal Server Error', 'Failed to write file')
+
+            elif '/delete' in path:
+                delete_path = self.parse_and_validate_path(client_socket, session_id, path, 'delete')
+                if not delete_path:
+                    return
+
+                full_path = os.path.join('./data', delete_path)
+                if not os.path.exists(full_path):
+                    send_response(client_socket, session_id, '404 Not Found', 'File not found')
+                    return
+
+                try:
+                    os.remove(full_path)
+                    send_response(client_socket, session_id, '200 OK', 'File deleted successfully')
+                except IOError:
+                    send_response(client_socket, session_id, '500 Internal Server Error', 'Failed to delete file')
+            else:
+                send_response(client_socket, session_id, '405 Method Not Allowed', 'Method not allowed.')
+
+        # 如果是GET或HEAD请求
         elif method == 'GET' or method == 'HEAD':
             # 解析URL
             print(path)
@@ -324,8 +398,8 @@ class HttpServer:
                 return
 
             if os.path.isdir(file_system_path):
-                if sustech_http == '0':
-                    send_directory_listing(client_socket, session_id, file_system_path)
+                if sustech_http == '0' or path == '/':  # 如果是请求根目录，发送目录列表
+                    send_directory_html(client_socket, session_id, file_system_path)
                 elif sustech_http == '1':
                     send_directory_metadata(client_socket, session_id, file_system_path)
                 else:
@@ -364,6 +438,41 @@ class HttpServer:
             return True, session_id, None
         else:
             return False, None, 'Invalid username or password'
+
+    def parse_and_validate_path(self, client_socket, session_id, path, operation):
+        # Extract the username from the session
+        username = self.sessions.get(session_id)
+
+        # Check if the request is authorized
+        if not username:
+            send_response(client_socket, session_id, '401 Unauthorized', 'Unauthorized')
+            return None
+
+        # Parse the path query parameter
+        try:
+            query = path.split('?')[1]
+            query_params = query.split('=')
+
+            if not query_params[0] == 'path' or len(query_params) != 2:
+                send_response(client_socket, session_id, '400 Bad Request', 'Missing or invalid path parameter')
+                return None
+
+            # Normalize the path
+            normalized_path = query_params[1]
+            if normalized_path.startswith('/'):
+                normalized_path = normalized_path[1:]
+            if normalized_path.endswith('/'):
+                normalized_path = normalized_path[:-1]
+
+            # Check if the path is valid for the user
+            if not normalized_path.startswith(f'{username}'):
+                send_response(client_socket, session_id, '403 Forbidden', 'Forbidden')
+                return None
+
+            return normalized_path
+        except IndexError:
+            send_response(client_socket, session_id, '400 Bad Request', f'Missing {operation} path parameter')
+            return None
 
 
 # 服务器监听地址和端口
