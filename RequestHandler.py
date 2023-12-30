@@ -24,7 +24,7 @@ class RequestHandler:
 
     def handle_request(self):
         try:
-            request = self.client_socket.recv(1024).decode()
+            request = self.client_socket.recv(1024).decode()    # ？？？？？？？
             if not request:
                 return False  # 没有请求或连接应该关闭
 
@@ -53,23 +53,13 @@ class RequestHandler:
             return False  # 请求解析失败，关闭连接
 
     def process_method(self, method, path, headers, body):
-        """处理客户端连接"""
-        if method == 'POST':
-            self.handle_post_request(path, headers, body)
-        elif method in ['GET', 'HEAD']:
-            self.handle_get_head_request(method, path, headers)
-        else:
-            self.response_sender.send(
-                {'status': '405 Method Not Allowed', 'body': 'Method not allowed.'})
-
-    def handle_post_request(self, path, headers, body):
-        if '/upload' in path:
+        """根据请求的URL路径和HTTP方法调用相应的处理函数"""
+        if path.startswith('/upload') and method == 'POST':
             self.file_handler.handle_file_upload(path, headers, body)
-        elif '/delete' in path:
+        elif path.startswith('/delete') and method == 'POST':
             self.file_handler.handle_file_deletion(path)
+        elif path.startswith('/') and method in ['GET', 'HEAD']:
+            self.file_handler.handle_file_download(path, headers)
         else:
-            self.response_sender.send(
-                {'status': '405 Method Not Allowed', 'body': 'Method not allowed.'})
-
-    def handle_get_head_request(self, method, path, headers):
-        self.file_handler.handle_file_download(path, headers)
+            # 如果不符合以上任何规则，返回405 Method Not Allowed
+            self.response_sender.send({'status': '405 Method Not Allowed', 'body': 'Method not allowed.'})

@@ -4,21 +4,20 @@ import os
 
 
 def parse_multipart_form_data(body, boundary):
-    """解析multipart/form-data格式的数据。
+    """解析multipart/form-data格式的数据以支持多文件上传。
 
     Args:
         body (str): 请求体的内容。
         boundary (str): 分隔符。
 
     Returns:
-        tuple: 包含文件名和文件数据的元组。
+        list of tuples: 包含文件名和文件数据的元组的列表。
     """
     # 分割请求体为不同部分
     parts = body.split('--' + boundary)
 
-    # 初始化文件名和文件数据
-    file_name = None
-    file_data = None
+    # 初始化用于存储所有文件的列表
+    files = []
 
     # 遍历每个部分
     for part in parts:
@@ -31,10 +30,10 @@ def parse_multipart_form_data(body, boundary):
             # 文件数据通常位于两个CRLF之后
             file_data = part.split('\r\n\r\n')[1].rstrip('\r\n--')
 
-            # 一旦找到文件，就跳出循环
-            break
+            # 将文件名和文件数据添加到列表中
+            files.append((file_name, file_data.encode()))
 
-    return file_name, file_data.encode()  # 编码文件数据为字节
+    return files  # 返回包含所有文件的列表
 
 
 def parse_range_header(range_header):
@@ -78,25 +77,32 @@ class FileHandler:
         content_type = headers.get('Content-Type', '')
         if 'multipart/form-data' in content_type:
             boundary = content_type.split('boundary=')[1]
-            file_name, file_data = parse_multipart_form_data(body, boundary)
+            files = parse_multipart_form_data(body, boundary)  # 获取所有文件
 
-            full_path = os.path.join('./data', upload_path, file_name)
-            directory = os.path.dirname(full_path)
-            if not os.path.exists(directory):
+            # 如果没有文件上传，则发送相应的响应
+            if not files:
                 self.response_sender.send(
-                    {'status': '404 Not Found', 'body': 'Directory not found'})
+                    {'status': '400 Bad Request', 'body': 'No files uploaded'})
                 return
 
-            try:
-                with open(full_path, 'wb') as file:
-                    file.write(file_data)
-                self.response_sender.send(
-                    {'status': '200 OK', 'body': 'File uploaded successfully'})
-                return
-            except IOError:
-                self.response_sender.send(
-                    {'status': '500 Internal Server Error', 'body': 'Failed to write file'})
-                return
+            for file_name, file_data in files:
+                full_path = os.path.join('./data', upload_path, file_name)
+                directory = os.path.dirname(full_path)
+                if not os.path.exists(directory):
+                    self.response_sender.send(
+                        {'status': '404 Not Found', 'body': 'Directory not found'})
+                    return
+
+                try:
+                    with open(full_path, 'wb') as file:
+                        file.write(file_data)
+                    # 发送成功上传的消息
+                    self.response_sender.send(
+                        {'status': '200 OK', 'body': f'File {file_name} uploaded successfully'})
+                except IOError:
+                    self.response_sender.send(
+                        {'status': '500 Internal Server Error', 'body': 'Failed to write file'})
+                    return
 
     def handle_file_deletion(self, path):
         # 在这里处理文件删除逻辑
@@ -131,7 +137,13 @@ class FileHandler:
         file_path = path_parts[0]
         query_params = {}
         if len(path_parts) > 1:
-            query_params = dict(param.split('=') for param in path_parts[1].split('&') if '=' in param)
+            try:
+                query_params = dict(param.split('=') for param in path_parts[1].split('&') if '=' in param)
+            except ValueError:
+                # 如果查询参数格式无效，返回400 Bad Request
+                self.response_sender.send(
+                    {'status': '400 Bad Request', 'body': 'Bad request syntax.'})
+                return
 
         sustech_http = query_params.get('SUSTech-HTTP')
 
@@ -162,9 +174,6 @@ class FileHandler:
                 self.send_file_content_range(file_system_path, range_header)
             else:
                 self.send_file_content(file_system_path)
-        else:
-            self.response_sender.send(
-                {'status': '404 Not Found', 'body': 'The requested URL was not found on this server.'})
 
     def parse_and_validate_path(self, path, operation):
         username = self.authenticator.sessions.get(self.response_sender.get_session_id())
@@ -251,7 +260,7 @@ class FileHandler:
 
                 # 发送文件内容的每个块
                 while True:
-                    chunk = f.read(4096)  # 读取固定大小的块
+                    chunk = f.read(4096)  # 读取固定大小的块 ？？？？？？？？？？？？？？？？？？？？？？？？
                     if not chunk:
                         break
                     size_str = f"{len(chunk):X}\r\n"
@@ -333,13 +342,11 @@ class FileHandler:
 
     def send_file_content(self, file_system_path):
         """发送文件的内容。"""
-        print('send_file_content')
         try:
             with open(file_system_path, 'rb') as f:
                 content = f.read()
-                content_type = mimetypes.guess_type(file_system_path)[0] or 'application/octet-stream'
                 headers = {
-                    'Content-Type': content_type,
+                    'Content-Type': mimetypes.guess_type(file_system_path)[0] or 'application/octet-stream',
                     'Content-Disposition': 'attachment; filename="{}"'.format(os.path.basename(file_system_path))
                 }
                 self.response_sender.send(
