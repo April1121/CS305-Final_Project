@@ -238,6 +238,7 @@ class FileHandler:
         """发送目录的元数据。"""
         try:
             entries = os.listdir(dir_system_path)
+            entries = sorted(entries)  # 按字典序排序
             updated_entries = [entry + '/' if os.path.isdir(os.path.join(dir_system_path, entry)) else entry for entry
                                in entries]
             self.response_sender.send(
@@ -258,16 +259,17 @@ class FileHandler:
                 }
                 self.response_sender.send({'status': '200 OK', 'headers': headers})
 
+                client_socket = self.response_sender.get_client_socket()
                 # 发送文件内容的每个块
                 while True:
-                    chunk = f.read(4096)  # 读取固定大小的块 ？？？？？？？？？？？？？？？？？？？？？？？？
+                    chunk = f.read(4096)  # 读取固定大小的块
                     if not chunk:
                         break
                     size_str = f"{len(chunk):X}\r\n"
-                    self.response_sender.get_client_socket.send(size_str.encode() + chunk + b'\r\n')
+                    client_socket.send(size_str.encode() + chunk + b'\r\n')
 
                 # 发送结束块
-                self.response_sender.get_client_socket.send(b'0\r\n\r\n')
+                client_socket.send(b'0\r\n\r\n')
         except IOError:
             self.response_sender.send(
                 {'status': '404 Not Found', 'body': 'File not found.'})
