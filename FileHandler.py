@@ -1,7 +1,11 @@
+import base64
 import json
 import mimetypes
 import os
-
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.fernet import Fernet
 
 def parse_multipart_form_data(body, boundary):
     """解析multipart/form-data格式的数据以支持多文件上传。
@@ -84,8 +88,39 @@ class FileHandler:
                 self.response_sender.send(
                     {'status': '400 Bad Request', 'body': 'No files uploaded'})
                 return
-
+            # 首先找到密钥文件并解密对称密钥
+            cipher_suite = None
             for file_name, file_data in files:
+                if file_name == "key.txt":
+                    # 加载私钥
+                    with open("key/Server_private_key.pem", "rb") as key_file:
+                        private_key = serialization.load_pem_private_key(
+                            key_file.read(),
+                            password=None
+                        )
+                    # 解码Base64编码的密钥
+                    decoded_key = base64.b64decode(file_data)
+                    # 使用私钥解密对称密钥
+                    decrypted_key = private_key.decrypt(
+                        decoded_key,
+                        padding.OAEP(
+                            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                            algorithm=hashes.SHA256(),
+                            label=None
+                        )
+                    )
+
+                    # 创建一个Cipher对象
+                    cipher_suite = Fernet(decrypted_key)
+                    break
+            # 然后遍历所有的文件，使用解密后的对称密钥来解密文件数据
+            for file_name, file_data in files:
+                if file_name == "key.txt":
+                    continue
+                # 解密文件数据
+                if cipher_suite:
+                    file_data = cipher_suite.decrypt(file_data)
+
                 full_path = os.path.join('./data', upload_path, file_name)
                 directory = os.path.dirname(full_path)
                 if not os.path.exists(directory):

@@ -2,6 +2,11 @@ import socket
 import base64
 import os
 
+import requests
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.fernet import Fernet
 
 class HttpClient:
     def __init__(self, host, port):
@@ -109,6 +114,31 @@ def choose_serve(choice, client):
     elif choice == 2:
         print("hello")
     elif choice == 3:
+        # 生成对称密钥
+        symmetric_key = Fernet.generate_key()
+        # 创建一个Cipher对象
+        cipher_suite = Fernet(symmetric_key)
+        # 加载服务器的公钥
+        with open("key/Server_public_key.pem", "rb") as key_file:
+            public_key = serialization.load_pem_public_key(
+                key_file.read()
+            )
+
+        # 使用公钥加密对称密钥
+        encrypted_key = public_key.encrypt(
+            symmetric_key,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        files = {"firstFile": cipher_suite.encrypt(open("tmp/a.txt", "rb").read()),
+                 "key.pem": encrypted_key}
+        data = {}
+        headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
+        r = requests.post(url='http://127.0.0.1:8080/upload?path=client1/', data=data, headers=headers, files=files)
+        print(r)
         print("hello")
     elif choice == 4:
         print("Bye")
@@ -116,7 +146,7 @@ def choose_serve(choice, client):
 
 
 # 服务器地址和端口
-HOST, PORT = 'localhost', 8000
+HOST, PORT = 'localhost', 8080
 client = HttpClient(HOST, PORT)
 try:
     client.connect()
