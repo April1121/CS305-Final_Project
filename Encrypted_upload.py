@@ -32,7 +32,7 @@ encrypted_key = public_key.encrypt(
 base64_encoded_key = base64.b64encode(encrypted_key).decode()
 
 # 将Base64编码的字符串保存为.txt文件
-with open("key/Server_encrypted_key.txt", "w") as f:
+with open("key/Client_encrypted_key.txt", "w") as f:
     f.write(base64_encoded_key)
 
 # 读取并加密文件内容
@@ -44,7 +44,7 @@ with open("tmp/encrypted_a.txt", "wb") as file:
     file.write(encrypted_file_data)
 
 files = {"firstFile": ("a.txt", open('tmp/encrypted_a.txt', "rb")),
-         "key.txt": ("key.txt", open("key/Server_encrypted_key.txt", "rb"))}
+         "key.txt": ("key.txt", open("key/Client_encrypted_key.txt", "rb"))}
 data = {}
 headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
 r = requests.post(url='http://127.0.0.1:8080/upload?path=client1/', data=data, headers=headers, files=files)
