@@ -46,11 +46,13 @@ def parse_range_header(range_header):
             start, end = part.strip().split('-')
             start = int(start) if start else None
             end = int(end) if end else None
+            if start is None and end is None:   # 当part为'-'时
+                return []
             ranges.append((start, end))
         return ranges
-    except Exception as e:
+    except Exception as e:  # 当range_header为None时，或没有'-'时，或start和end不是整数时
         print(f"Error parsing Range header: {e}")
-        return None
+        return []
 
 
 class FileHandler:
@@ -277,6 +279,11 @@ class FileHandler:
     def send_file_content_range(self, file_system_path, range_header):
         file_size = os.path.getsize(file_system_path)
         ranges = parse_range_header(range_header)
+        if not ranges:  # 没有提供范围或解析失败
+            self.response_sender.send(
+                {'status': '400 Bad Request', 'body': 'Invalid Range header'})
+            return
+
         if len(ranges) == 1:
             # 单范围请求
             start, end = ranges[0]
@@ -310,7 +317,7 @@ class FileHandler:
     def send_multiple_ranges(self, file_path, ranges, file_size):
         """发送多范围请求的响应"""
         headers = {
-            'Content-Type': 'multipart/byteranges; boundary=THIS_STRING_SEPARATES',
+            'Content-Type': 'multipart/byteranges; boundary=THISISMYSELFDIFINEDBOUNDARY',
             # 'Transfer-Encoding': 'chunked',
             'Content-Range': f'bytes */{file_size}',
             'MIME-Version': '1.0'
@@ -328,7 +335,7 @@ class FileHandler:
                 # 有效范围
                 with open(file_path, 'rb') as f:
                     f.seek(start)
-                    content += f'--THIS_STRING_SEPARATES\r\n'.encode()
+                    content += f'--THISISMYSELFDIFINEDBOUNDARY\r\n'.encode()
                     content += f'Content-Type: {mimetypes.guess_type(file_path)[0] or "application/octet-stream"}\r\n'.encode()
                     content += f'Content-Range: bytes {start}-{end}/{file_size}\r\n\r\n'.encode()
                     content += f.read(end - start + 1) + b'\r\n'
@@ -338,7 +345,7 @@ class FileHandler:
                     {'status': '416 Range Not Satisfiable', 'body': 'Invalid byte range'})
                 return
 
-        content += b'--THIS_STRING_SEPARATES--\r\n'  # 结束块（是否要加上\r\n？）
+        content += b'--THISISMYSELFDIFINEDBOUNDARY--\r\n'  # 结束块
         self.response_sender.send(
             {'status': '206 Partial Content', 'body': content, 'headers': headers})
 
