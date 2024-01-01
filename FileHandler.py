@@ -46,7 +46,7 @@ def parse_range_header(range_header):
             start, end = part.strip().split('-')
             start = int(start) if start else None
             end = int(end) if end else None
-            if start is None and end is None:   # 当part为'-'时
+            if start is None and end is None:  # 当part为'-'时
                 return []
             ranges.append((start, end))
         return ranges
@@ -208,28 +208,72 @@ class FileHandler:
         except IndexError:
             return {'response': {'status': '400 Bad Request', 'body': f'Missing {operation} path parameter'}}
 
+    # def send_directory_html(self, dir_system_path):
+    #     """发送一个列出目录内容的HTML页面。"""
+    #     try:
+    #         entries = os.listdir(dir_system_path)
+    #         # 添加HTML头部和标题
+    #         html_content = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'
+    #         html_content += '<html>\n<head>\n'
+    #         html_content += '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">\n'
+    #         html_content += '<title>Directory listing for {}</title>\n'.format(dir_system_path)
+    #         html_content += '</head>\n<body>\n'
+    #         html_content += '<h1>Directory listing for {}</h1>\n<hr>\n<ul>\n'.format(dir_system_path)
+    #
+    #         for entry in entries:
+    #             # 判断是否是目录，如果是，添加斜杠（/）
+    #             if os.path.isdir(os.path.join(dir_system_path, entry)):
+    #                 entry += '/'
+    #                 html_content += '<li><a href="{}">{}</a></li>\n'.format(entry + '?SUSTech-HTTP=0', entry)
+    #             else:
+    #                 html_content += '<li><a href="{}">{}</a></li>\n'.format(entry, entry)
+    #
+    #         html_content += '</ul>\n<hr>\n</body>\n</html>'
+    #
+    #         self.response_sender.send(
+    #             {'status': '200 OK', 'body': html_content, 'headers': {'Content-Type': 'text/html'}})
+    #     except IOError:
+    #         self.response_sender.send(
+    #             {'status': '404 Not Found', 'body': 'Directory not found.'})
+
     def send_directory_html(self, dir_system_path):
-        """发送一个列出目录内容的HTML页面。"""
         try:
             entries = os.listdir(dir_system_path)
-            # 添加HTML头部和标题
-            html_content = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'
-            html_content += '<html>\n<head>\n'
-            html_content += '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">\n'
-            html_content += '<title>Directory listing for {}</title>\n'.format(dir_system_path)
-            html_content += '</head>\n<body>\n'
-            html_content += '<h1>Directory listing for {}</h1>\n<hr>\n<ul>\n'.format(dir_system_path)
-
+            entry_list_items = ""
             for entry in entries:
                 # 判断是否是目录，如果是，添加斜杠（/）
                 if os.path.isdir(os.path.join(dir_system_path, entry)):
                     entry += '/'
-                    html_content += '<li><a href="{}">{}</a></li>\n'.format(entry + '?SUSTech-HTTP=0', entry)
+                    entry_list_items += '<li><a href="{}">{}</a></li>\n'.format(entry + '?SUSTech-HTTP=0', entry)
                 else:
-                    html_content += '<li><a href="{}">{}</a></li>\n'.format(entry, entry)
+                    entry_list_items += '<li><a href="{}">{}</a></li>\n'.format(entry, entry)
 
-            html_content += '</ul>\n<hr>\n</body>\n</html>'
+            root_directory = './data'  # 根目录设置为`data`目录
+            parent_path = os.path.dirname(dir_system_path.rstrip('/'))  # This calculates the parent directory path
+            print('parent_path: ' + parent_path)
 
+            if parent_path and os.path.normpath(parent_path) != os.path.normpath(root_directory):
+                # 由于parent_path将包含'data'，我们需要移除它，只留下相对于'data'的路径
+                parent_path = os.path.relpath(parent_path, root_directory)
+                parent_path += '/'  # 确保URL将其视为目录
+                parent_path = '/' + parent_path  # 这里添加了斜杠，使其成为绝对路径
+            else:
+                # 如果上级目录是根目录，那么我们设置链接为根目录
+                parent_path = '/'
+
+            print('parent_path111111: ' + parent_path)
+
+            # Add HTML links for root and parent directory
+            root_directory_link = '<li><a href="/?SUSTech-HTTP=0">Root Directory</a></li>\n'
+            parent_directory_link = '<li><a href="{}?SUSTech-HTTP=0">Parent Directory</a></li>\n'.format(parent_path)
+
+            # Prepend the root and parent directory links to the directory entries
+            entry_list_items = root_directory_link + parent_directory_link + entry_list_items
+
+            with open('directory_listing_template.html', 'r') as file:
+                html_template = file.read()
+
+            html_content = html_template.format(path=dir_system_path, directory_entries=entry_list_items)
             self.response_sender.send(
                 {'status': '200 OK', 'body': html_content, 'headers': {'Content-Type': 'text/html'}})
         except IOError:

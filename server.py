@@ -49,6 +49,7 @@ class HttpServer:
                     if result is None or result is False:
                         break  # 如果返回 None 或 False，则关闭连接
                 except Exception as e:
+                    print(f'{e.__class__.__name__}: {e}')
                     print(f"Exception occurred while handling request from {addr}: {e}")
                     break  # 出现异常时退出循环
         except Exception as e:
