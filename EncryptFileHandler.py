@@ -50,16 +50,14 @@ def parse_range_header(range_header):
             start, end = part.strip().split('-')
             start = int(start) if start else None
             end = int(end) if end else None
-            if start is None and end is None:  # 当part为'-'时
-                return []
             ranges.append((start, end))
         return ranges
-    except Exception as e:  # 当range_header为None时，或没有'-'时，或start和end不是整数时
+    except Exception as e:
         print(f"Error parsing Range header: {e}")
-        return []
+        return None
 
 
-class FileHandler:
+class EncryptFileHandler:
     """
     负责文件处理
     基础处理：文件上传、文件下载、文件删除
@@ -123,7 +121,7 @@ class FileHandler:
                 if cipher_suite:
                     file_data = cipher_suite.decrypt(file_data)
 
-                full_path = os.path.join('./data', upload_path, file_name)
+                full_path = os.path.join('data', upload_path, file_name)
                 directory = os.path.dirname(full_path)
                 if not os.path.exists(directory):
                     self.response_sender.send(
@@ -150,7 +148,7 @@ class FileHandler:
 
         delete_path = path_validation['delete_path']
 
-        full_path = os.path.join('./data', delete_path)
+        full_path = os.path.join('data', delete_path)
         if not os.path.exists(full_path):
             self.response_sender.send(
                 {'status': '404 Not Found', 'body': 'File not found'})
@@ -243,72 +241,28 @@ class FileHandler:
         except IndexError:
             return {'response': {'status': '400 Bad Request', 'body': f'Missing {operation} path parameter'}}
 
-    # def send_directory_html(self, dir_system_path):
-    #     """发送一个列出目录内容的HTML页面。"""
-    #     try:
-    #         entries = os.listdir(dir_system_path)
-    #         # 添加HTML头部和标题
-    #         html_content = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'
-    #         html_content += '<html>\n<head>\n'
-    #         html_content += '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">\n'
-    #         html_content += '<title>Directory listing for {}</title>\n'.format(dir_system_path)
-    #         html_content += '</head>\n<body>\n'
-    #         html_content += '<h1>Directory listing for {}</h1>\n<hr>\n<ul>\n'.format(dir_system_path)
-    #
-    #         for entry in entries:
-    #             # 判断是否是目录，如果是，添加斜杠（/）
-    #             if os.path.isdir(os.path.join(dir_system_path, entry)):
-    #                 entry += '/'
-    #                 html_content += '<li><a href="{}">{}</a></li>\n'.format(entry + '?SUSTech-HTTP=0', entry)
-    #             else:
-    #                 html_content += '<li><a href="{}">{}</a></li>\n'.format(entry, entry)
-    #
-    #         html_content += '</ul>\n<hr>\n</body>\n</html>'
-    #
-    #         self.response_sender.send(
-    #             {'status': '200 OK', 'body': html_content, 'headers': {'Content-Type': 'text/html'}})
-    #     except IOError:
-    #         self.response_sender.send(
-    #             {'status': '404 Not Found', 'body': 'Directory not found.'})
-
     def send_directory_html(self, dir_system_path):
+        """发送一个列出目录内容的HTML页面。"""
         try:
             entries = os.listdir(dir_system_path)
-            entry_list_items = ""
+            # 添加HTML头部和标题
+            html_content = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'
+            html_content += '<html>\n<head>\n'
+            html_content += '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">\n'
+            html_content += '<title>Directory listing for {}</title>\n'.format(dir_system_path)
+            html_content += '</head>\n<body>\n'
+            html_content += '<h1>Directory listing for {}</h1>\n<hr>\n<ul>\n'.format(dir_system_path)
+
             for entry in entries:
                 # 判断是否是目录，如果是，添加斜杠（/）
                 if os.path.isdir(os.path.join(dir_system_path, entry)):
                     entry += '/'
-                    entry_list_items += '<li><a href="{}">{}</a></li>\n'.format(entry + '?SUSTech-HTTP=0', entry)
+                    html_content += '<li><a href="{}">{}</a></li>\n'.format(entry + '?SUSTech-HTTP=0', entry)
                 else:
-                    entry_list_items += '<li><a href="{}">{}</a></li>\n'.format(entry, entry)
+                    html_content += '<li><a href="{}">{}</a></li>\n'.format(entry, entry)
 
-            root_directory = './data'  # 根目录设置为`data`目录
-            parent_path = os.path.dirname(dir_system_path.rstrip('/'))  # This calculates the parent directory path
-            print('parent_path: ' + parent_path)
+            html_content += '</ul>\n<hr>\n</body>\n</html>'
 
-            if parent_path and os.path.normpath(parent_path) != os.path.normpath(root_directory):
-                # 由于parent_path将包含'data'，我们需要移除它，只留下相对于'data'的路径
-                parent_path = os.path.relpath(parent_path, root_directory)
-                parent_path += '/'  # 确保URL将其视为目录
-                parent_path = '/' + parent_path  # 这里添加了斜杠，使其成为绝对路径
-            else:
-                # 如果上级目录是根目录，那么我们设置链接为根目录
-                parent_path = '/'
-
-            print('parent_path111111: ' + parent_path)
-
-            # Add HTML links for root and parent directory
-            root_directory_link = '<li><a href="/?SUSTech-HTTP=0">Root Directory</a></li>\n'
-            parent_directory_link = '<li><a href="{}?SUSTech-HTTP=0">Parent Directory</a></li>\n'.format(parent_path)
-
-            # Prepend the root and parent directory links to the directory entries
-            entry_list_items = root_directory_link + parent_directory_link + entry_list_items
-
-            with open('directory_listing_template.html', 'r') as file:
-                html_template = file.read()
-
-            html_content = html_template.format(path=dir_system_path, directory_entries=entry_list_items)
             self.response_sender.send(
                 {'status': '200 OK', 'body': html_content, 'headers': {'Content-Type': 'text/html'}})
         except IOError:
@@ -358,11 +312,6 @@ class FileHandler:
     def send_file_content_range(self, file_system_path, range_header):
         file_size = os.path.getsize(file_system_path)
         ranges = parse_range_header(range_header)
-        if not ranges:  # 没有提供范围或解析失败
-            self.response_sender.send(
-                {'status': '400 Bad Request', 'body': 'Invalid Range header'})
-            return
-
         if len(ranges) == 1:
             # 单范围请求
             start, end = ranges[0]
@@ -396,7 +345,7 @@ class FileHandler:
     def send_multiple_ranges(self, file_path, ranges, file_size):
         """发送多范围请求的响应"""
         headers = {
-            'Content-Type': 'multipart/byteranges; boundary=THISISMYSELFDIFINEDBOUNDARY',
+            'Content-Type': 'multipart/byteranges; boundary=THIS_STRING_SEPARATES',
             # 'Transfer-Encoding': 'chunked',
             'Content-Range': f'bytes */{file_size}',
             'MIME-Version': '1.0'
@@ -414,7 +363,7 @@ class FileHandler:
                 # 有效范围
                 with open(file_path, 'rb') as f:
                     f.seek(start)
-                    content += f'--THISISMYSELFDIFINEDBOUNDARY\r\n'.encode()
+                    content += f'--THIS_STRING_SEPARATES\r\n'.encode()
                     content += f'Content-Type: {mimetypes.guess_type(file_path)[0] or "application/octet-stream"}\r\n'.encode()
                     content += f'Content-Range: bytes {start}-{end}/{file_size}\r\n\r\n'.encode()
                     content += f.read(end - start + 1) + b'\r\n'
@@ -424,18 +373,45 @@ class FileHandler:
                     {'status': '416 Range Not Satisfiable', 'body': 'Invalid byte range'})
                 return
 
-        content += b'--THISISMYSELFDIFINEDBOUNDARY--\r\n'  # 结束块
+        content += b'--THIS_STRING_SEPARATES--\r\n'  # 结束块（是否要加上\r\n？）
         self.response_sender.send(
             {'status': '206 Partial Content', 'body': content, 'headers': headers})
 
     def send_file_content(self, file_system_path):
         """发送文件的内容。"""
         try:
-            with open(file_system_path, 'rb') as f:
-                content = f.read()
+            # 生成对称密钥
+            symmetric_key = Fernet.generate_key()
+
+            # 创建一个Cipher对象
+            cipher_suite = Fernet(symmetric_key)
+
+            # 加载客户端的公钥
+            with open("key/Client_public_key.pem", "rb") as key_file:
+                public_key = serialization.load_pem_public_key(
+                    key_file.read()
+                )
+
+            # 使用公钥加密对称密钥
+            encrypted_key = public_key.encrypt(
+                symmetric_key,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+
+            # 将加密后的对称密钥转换为Base64编码的字符串
+            base64_encoded_key = base64.b64encode(encrypted_key).decode()
+            # 加密文件内容并发送
+            with open(file_system_path, "rb") as file:
+                encrypted_file_data = cipher_suite.encrypt(file.read())
+                content = encrypted_file_data
                 headers = {
                     'Content-Type': mimetypes.guess_type(file_system_path)[0] or 'application/octet-stream',
-                    'Content-Disposition': 'attachment; filename="{}"'.format(os.path.basename(file_system_path))
+                    'Content-Disposition': 'attachment; filename="{}"'.format(os.path.basename(file_system_path)),
+                    'encrypted_key': base64_encoded_key
                 }
                 self.response_sender.send(
                     {'status': '200 OK', 'body': content, 'headers': headers})
